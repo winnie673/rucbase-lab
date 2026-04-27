@@ -20,14 +20,29 @@ LRUReplacer::~LRUReplacer() = default;
  * @return {bool} 如果成功淘汰了一个页面则返回true，否则返回false
  */
 bool LRUReplacer::victim(frame_id_t* frame_id) {
-    // C++17 std::scoped_lock
-    // 它能够避免死锁发生，其构造函数能够自动进行上锁操作，析构函数会对互斥量进行解锁操作，保证线程安全。
-    std::scoped_lock lock{latch_};  //  如果编译报错可以替换成其他lock
-
     // Todo:
     //  利用lru_replacer中的LRUlist_,LRUHash_实现LRU策略
     //  选择合适的frame指定为淘汰页面,赋值给*frame_id
 
+    // 使用std::scoped_lock进行线程安全的上锁操作
+    std::scoped_lock lock{latch_};
+
+    // 检查LRUlist是否为空，如果为空则没有可淘汰的页面
+    if (LRUlist_.empty()) {
+        frame_id = nullptr;  // 设置为nullptr表示没有淘汰页面
+        return false;        // 返回false表示淘汰失败
+    } else {
+        // 选择LRUlist的尾部元素（最少最近使用的页面）
+        *frame_id = LRUlist_.back();
+        // 从LRUlist中移除该元素
+        LRUlist_.pop_back();
+        // 从LRUhash中移除对应的映射
+        LRUhash_.erase(*frame_id);
+        // 返回true表示成功淘汰了一个页面
+        return true;
+    }
+
+    // 注意：这里的return true是多余的，因为else分支已经返回了，但为了完整性保留
     return true;
 }
 
@@ -36,10 +51,23 @@ bool LRUReplacer::victim(frame_id_t* frame_id) {
  * @param {frame_id_t} 需要固定的frame的id
  */
 void LRUReplacer::pin(frame_id_t frame_id) {
-    std::scoped_lock lock{latch_};
     // Todo:
     // 固定指定id的frame
     // 在数据结构中移除该frame
+
+    // 使用std::scoped_lock进行线程安全的上锁操作
+    std::scoped_lock lock{latch_};
+
+    // 在LRUhash中查找指定的frame_id
+    auto find = LRUhash_.find(frame_id);
+    // 如果找到该frame（即它在LRUlist中）
+    if (find != LRUhash_.end()) {
+        // 从LRUlist中移除该frame（使用迭代器进行高效删除）
+        LRUlist_.erase(find->second);
+        // 从LRUhash中移除对应的映射
+        LRUhash_.erase(find);
+    }
+    // 如果没有找到，说明该frame不在replacer中，无需操作
 }
 
 /**
@@ -50,6 +78,20 @@ void LRUReplacer::unpin(frame_id_t frame_id) {
     // Todo:
     //  支持并发锁
     //  选择一个frame取消固定
+    
+    // 使用std::scoped_lock进行线程安全的上锁操作
+    std::scoped_lock lock{latch_};
+
+    // 在LRUhash中查找指定的frame_id
+    auto find = LRUhash_.find(frame_id);
+    // 如果没有找到该frame（即它不在LRUlist中）
+    if (find == LRUhash_.end()) {
+        // 将该frame添加到LRUlist的头部（表示最近被访问）
+        LRUlist_.push_front(frame_id);
+        // 在LRUhash中记录该frame的迭代器位置
+        LRUhash_[frame_id] = LRUlist_.begin();
+    }
+    // 如果已经存在，无需操作（假设已经是最新的）
 }
 
 /**
