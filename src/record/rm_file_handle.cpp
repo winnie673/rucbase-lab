@@ -136,11 +136,12 @@ void RmFileHandle::delete_record(const Rid& rid, Context* context) {
     Bitmap::reset(page_handle.bitmap, rid.slot_no);  // 置0
 
     // 步骤4: 更新页面头中的记录数
-    page_handle.page_hdr->num_records-=1;
+    page_handle.page_hdr->num_records -= 1;
 
     // 步骤5: 检查删除记录后页面是否从满变为空闲，如果是则将其加入空闲页面链表
-    if(page_handle.page_hdr->num_records == file_hdr_.num_records_per_page) {
-        release_page_handle(page_handle);  // 这里应该是从满变未满时调用，但条件有误
+    // 这里判断删除后记录数是否等于满页记录数减1，表示页面从满变为未满
+    if(page_handle.page_hdr->num_records == file_hdr_.num_records_per_page - 1) {
+        release_page_handle(page_handle);
     }
 }
 
@@ -242,8 +243,6 @@ RmPageHandle RmFileHandle::create_page_handle() {
         // 步骤1.2: 如果没有空闲页，创建一个新页面
         return create_new_page_handle();
     }
-}
-    return create_new_page_handle();
 }
 
 /**
